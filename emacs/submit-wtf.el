@@ -1,7 +1,7 @@
 
 ;; Copyright (C) 2002, 2003  Alex Schroeder
 
-;; Author: Plamen K. Kosseff <p.kosseff [ a t ] gmail.com>
+;; Author: Plamen K. Kosseff <p.kosseff [ a t ] anti-ad.org>
 ;; Version: 1.0
 ;; Keywords: WTF
 ;; URL: http://www.emacswiki.org/cgi-bin/wiki.pl?HttpPost
@@ -70,6 +70,7 @@ If you just need to shere your pain without warring about consquences."
      ;;(setq c (current-kill 0 t))
      (with-current-buffer buff
        (erase-buffer)
+       (widget-insert "Submit some horrible code to TheDailyWTF.com by Plamen K. Kosseff\n\n\n\n")
        (widget-insert "Your name:             ")
        (setq wtf-name (widget-create 'editable-field
                                      :size 32
