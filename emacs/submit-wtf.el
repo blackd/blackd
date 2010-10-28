@@ -4,7 +4,6 @@
 ;; Author: Plamen K. Kosseff <p.kosseff [ a t ] anti-ad.org>
 ;; Version: 1.0
 ;; Keywords: WTF
-;; URL: http://www.emacswiki.org/cgi-bin/wiki.pl?HttpPost
 
 ;; This file is not part of GNU Emacs.
 
