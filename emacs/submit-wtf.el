@@ -191,7 +191,7 @@ distinguish between \\r and \\n.  To correctly decode the text later,
 use `decode-coding-region' and get the coding system to use from
 `http-headers'."
   (interactive)
-  (setq version (or version 1.0))
+  (setq version (or version 1.1))
   (let* (host dir file port proc buf header content-length)
     (unless (string-match
              "http://\\([^/:]+\\)\\(:\\([0-9]+\\)\\)?/\\(.*/\\)?\\([^:]*\\)"
