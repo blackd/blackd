@@ -133,19 +133,18 @@ A form will be shown to enter details."
                      (widget-value wtf-subject)
                      (widget-value wtf-comment)
                      (widget-value wtf-source)
-                     (if wtf-dontPublish 
+                     (if (widget-value wtf-dontPublish)
                          "true"
-                       "false")
-                     )))
+                       "false"))))
     (setq wtf-proc (http-post "http://thedailywtf.com/SubmitWTF.asmx" 
-                          xml 
-                          "application/soap+xml; charset=utf-8"
-                          nil
-                          'wtf-response-ignore))
+                              xml 
+                              "application/soap+xml; charset=utf-8"
+                              nil
+                              'wtf-response-ignore))
     (kill-buffer (get-buffer-create "*submit-wtf*"))))
-  
 
-(defun wtf-cancel-button (widget child &optional event) 
+
+(defun wtf-cancel-button (&rest ignore) 
   (kill-buffer (get-buffer-create "*submit-wtf*")))
 
 (defun wtf-response-ignore(&rest ignore)
@@ -239,12 +238,4 @@ use `decode-coding-region' and get the coding system to use from
 
 
 (provide 'the-daily-wtf)
-
-
-
-
-
-
-
-
 
