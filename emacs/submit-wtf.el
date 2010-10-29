@@ -1,5 +1,5 @@
 
-;; Copyright (C) 2002, 2003  Alex Schroeder
+;; Copyright (C) 2010 Plamen K. Kosseff
 
 ;; Author: Plamen K. Kosseff <p.kosseff [ a t ] anti-ad.org>
 ;; Version: 1.0
@@ -55,10 +55,12 @@ If you just need to shere your pain without warring about consquences."
 (defvar wtf-dontPublish)
 (defvar wtf-comment)
 (defvar wtf-source)
-
+(defvar wtf-proc)
 
 
 (defun wtf-submit ()
+  "Submits the current region (selection) to TheDailyWTF.com.
+A form will be shown to enter details."
   (interactive 
    (let ((source (buffer-substring-no-properties (point) (mark t)))
          (buff (get-buffer-create "*submit-wtf*"))
@@ -83,7 +85,7 @@ If you just need to shere your pain without warring about consquences."
        (widget-insert "Subject:               ")
        (setq wtf-subject (widget-create 'editable-field
                                         :size 32
-                                        ""))
+                                        submit-wtf-subject))
        (widget-insert "\n")
        (widget-insert "Do not publish:        ")
        (setq wtf-dontPublish (widget-create 'toggle))
@@ -111,7 +113,8 @@ If you just need to shere your pain without warring about consquences."
        (set-window-buffer nil buff)))))
 
 
-(defun wtf-submit-button (widget child &optional event) 
+(defun wtf-submit-button (&rest ignore) 
+  "Does the actual submit to the http://thedailywtf.com/SubmitWTF.asmx web service."
   (let ((xml (format "<?xml version=\"1.0\" encoding=\"utf-8\"?>
 <soap12:Envelope xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:soap12=\"http://www.w3.org/2003/05/soap-envelope\">
   <soap12:Body>
@@ -133,19 +136,20 @@ If you just need to shere your pain without warring about consquences."
                      (if wtf-dontPublish 
                          "true"
                        "false")
-                     ))
-        proc)
-    (print xml)
-    (http-post "http://thedailywtf.com/SubmitWTF.asmx" 
-               xml 
-               "application/soap+xml; charset=utf-8")
-    (kill-buffer (process-buffer proc))
+                     )))
+    (setq wtf-proc (http-post "http://thedailywtf.com/SubmitWTF.asmx" 
+                          xml 
+                          "application/soap+xml; charset=utf-8"
+                          nil
+                          'wtf-response-ignore))
     (kill-buffer (get-buffer-create "*submit-wtf*"))))
   
 
 (defun wtf-cancel-button (widget child &optional event) 
   (kill-buffer (get-buffer-create "*submit-wtf*")))
 
+(defun wtf-response-ignore(&rest ignore)
+  (kill-buffer (process-buffer wtf-proc)))
 
 (defun http-post (url body content-type &optional headers sentinel
                       version verbose bufname)
