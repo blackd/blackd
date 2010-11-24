@@ -37,7 +37,7 @@ if os.name != 'posix':
     
 
 
-import subprocess, logging, logging.handlers, argparse, time, tempfile, string, shutil
+import subprocess, logging, logging.handlers, argparse, time, tempfile, string, shutil, select, fcntl
 from datetime import datetime
 from threading import Thread, Event, Timer
 
@@ -197,6 +197,10 @@ def parse_arguments():
                         action='store_true',
                         help='Test run no changes will be made in TARGET.')
 
+    parser.add_argument('--no-delete',    
+                        action='store_true',
+                        help='Don\'t pass --delete parameter to rsync.')
+
     args = parser.parse_args();
     if not args.url.endswith('/'):
         args.url = args.url + '/'
@@ -295,33 +299,38 @@ def get_base_rsync_command(clean = False, force_dry_run=False):
         cmd = PartialFormatter().format(cmd, insert_point='')
     return cmd
 
-def log_rsync_error(msg, out, err, args):
-    log_proc_error('rsync', msg, out, err, args)
 
 
-def log_proc_error(name, msg, out, err, args):
-    log.error(msg, args)
-    if out and len(out) > 0:
-        log.error('%s stdout:', name)
-        for s in out.decode().split('\n'):
-            log.error('\t%s', s)
-    if err and len(err) > 0:
-        log.error('%s stderr:', name)
-        for s in err.decode().split('\n'):
-            log.error('\t%s', s)
+def read_proc_output(proc, name, level):
+    log.debug('Start polling for %s', name)
 
-def log_rsync_output(out, err):
-    log_proc_output('rsync', out, err)
+    out = proc.stdout
+    err = proc.stderr
+    out_buff = []
+    err_buff = []
 
-def log_proc_output(name, out, err):
-    if out and len(out) > 0:
-        log.debug('%s stdout:', name)
-        for s in out.decode().split('\n'):
-            log.debug('\t%s', s)
-    if err and len(err) > 0:
-        log.debug('%s stderr:', name)
-        for s in err.decode().split('\n'):
-            log.debug('\t%s', s)
+    def read_pipe(t, proc, pipe, level, buff):
+        while True:
+            try:
+                line = pipe.readline()
+                if not line or len(line) == 0:
+                    break
+                log.log(level, '[%s][%s]\t%s', proc, t, line.rstrip())
+                buff.append(line)
+            except:
+                pass
+
+    stderr_thread = Thread(target=read_pipe,
+                                     args=('stderr', name, err, logging.DEBUG, err_buff))
+    stdout_thread = Thread(target=read_pipe,
+                                     args=('stdout', name, out, logging.DEBUG, out_buff))
+    stderr_thread.start()
+    stdout_thread.start()
+    stdout_thread.join()
+    stderr_thread.join()
+    proc.wait()
+    return ''.join(iter(out)), ''.join(iter(err))
+
 
 
 def has_changes():
@@ -331,16 +340,15 @@ def has_changes():
     log.debug('invoke %r', ' '.join(iter(rsync)))
 
     proc = subprocess.Popen(rsync, bufsize=512, stdout=subprocess.PIPE, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
-    out, err = proc.communicate()
+    out, err = read_proc_output(proc, 'rsync', logging.DEBUG)
     errcode = proc.poll()
     if errcode == 0:
-        log_rsync_output(out,err)
         result = not (not out and len(out) == 0 and not err and len(err) == 0)
         log.info('Changes detected!' if result else 'No changes detected!')
         return result
     else:
-        log_rsync_error('Unable to determine if there are changes. rsync error code %i', out, err, errcode)
-        errcode = 1
+        log.error('Unable to determine if there are changes. rsync error code %i', errcode)
+        exitcode = 1
         raise BackupException('Unable to determine if there are changes.')
     
 
@@ -350,14 +358,13 @@ def update_prev_link():
    
     cmd = get_base_rsync_command(True)
     rsync = (cmd.format(target='latest', base=args.url, source='')[0:-1] + ' --list-only').split()
-
     log.debug('invoke %r', ' '.join(iter(rsync)))
 
     proc = subprocess.Popen(rsync, bufsize=512, stdout=subprocess.PIPE, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
-    out, err = proc.communicate()
+    read_proc_output(proc, 'rsync', logging.DEBUG)
+    
     errcode = proc.poll()
     if errcode == 0:
-        log_rsync_output(out,err)
         ls = out.split('\n')
         if len(ls) > 0 and len(ls[0]) > 0 and ls[0][0] == 'l':
             log.debug('good "latest" is a symlink')
@@ -365,13 +372,14 @@ def update_prev_link():
             rsync = cmd.format(target=TMP, base='', source=(args.url + 'latest')).split()
             log.debug('invoke %r', ' '.join(iter(rsync)))
             proc = subprocess.Popen(rsync, bufsize=512, stdout=subprocess.PIPE, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
-            out, ere = proc.communicate()
+            read_proc_output(proc, 'rsync', logging.DEBUG)
+
             errcode = proc.poll()
             if errcode == 0:
-                log_rsync_output(out,err)
+
                 
                 log.debug('"latest" donloaded in %s', TMP)
-                log_rsync_output(out,err)
+
                 latest_tmp = TMP + '/latest'
                 prev_tmp = TMP + '/prev'
                 log.debug('rename %s to %s', latest_tmp, prev_tmp)
@@ -380,22 +388,22 @@ def update_prev_link():
                 rsync = cmd.format(target='', base=args.url, source=(prev_tmp))[0:-1].split()
                 log.debug('invoke %r', ' '.join(iter(rsync)))
                 proc = subprocess.Popen(rsync, bufsize=512, stdout=subprocess.PIPE, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
-                out, ere = proc.communicate()
+                read_proc_output(proc, 'rsync', logging.DEBUG)
+
+
                 errcode = proc.poll();
                 if errcode  != 0:
-                    log_rsync_error('Unable to upload updated "prev" link. rsync error code %i', out, err, errcode)
-                    errcode = 2
+                    log.error('Unable to upload updated "prev" link. rsync error code %i', errcode)
+                    exitcode = 2
                     raise BackupException('Unable to determine if "latest" is a simlink.')
-                else:
-                    log_rsync_output(out,err)
                 log.debug('"prev" updated.')
             else:               
-                log_rsync_error('Unable to determine if "latest" is a simlink. rsync error code %i', out, err, errcode)
-                errcode = 3
+                log.error('Unable to determine if "latest" is a simlink. rsync error code %i', errcode)
+                exitcode = 3
                 raise BackupException('Unable to determine if "latest" is a simlink.')
     else:
-        log_rsync_error('Unable to determine if "latest" is a simlink. rsync error code %i', out, err, errcode)
-        errcode = 4
+        log.error('Unable to determine if "latest" is a simlink. rsync error code %i', errcode)
+        exitcode = 4
         raise BackupException('Unable to determine if "latest" is a simlink.')
 
 def update_latest_link(current_backup):
@@ -406,14 +414,13 @@ def update_latest_link(current_backup):
     rsync = cmd.format(target='', base=args.url, source=(latest_tmp))[0:-1].split()
     log.debug('invoke %r', ' '.join(iter(rsync)))
     proc = subprocess.Popen(rsync, bufsize=512, stdout=subprocess.PIPE, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
-    out, err = proc.communicate()
+
+    read_proc_output(proc, 'rsync', logging.DEBUG)
     
     if proc.poll() != 0:
-        log_rsync_error('Unable to upload updated "latest" link. rsync error code %i', out, err, errcode)
-        errcode = 5
+        log.error('Unable to upload updated "latest" link. rsync error code %i', errcode)
+        exitcore = 5
         raise BackupException('Unable to determine if "latest" is a simlink.')
-    else:
-        log_rsync_output(out,err)
     
 
 def create_dir_on_target(name):
@@ -427,15 +434,14 @@ def create_dir_on_target(name):
     log.debug('invoke %r', ' '.join(iter(rsync)))
 
     proc = subprocess.Popen(rsync, bufsize=512, stdout=subprocess.PIPE, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
-    out, err = proc.communicate()
+    read_proc_output(proc, 'rsync', logging.DEBUG)
+
     os.rmdir(tmpdir)
     
     if proc.poll() != 0:
-        log_rsync_error('Unable to create dir %s on %s. rsync error code %i',out, err, name, args.url, errcode)
-        errcode = 6
+        log.error('Unable to create dir %s on %s. rsync error code %i', name, args.url, errcode)
+        exitcode = 6
         raise BackupException('Unable to create dir on TARGET')
-    else:
-        log_rsync_output(out, err)    
 
 
 def create_new_increment():
@@ -450,14 +456,12 @@ def create_new_increment():
     log.debug('invoke %r', ' '.join(iter(rsync)))
 
     proc = subprocess.Popen(rsync, bufsize=512, stdout=subprocess.PIPE, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
-    out, err = proc.communicate()
+    read_proc_output(proc, 'rsync', logging.DEBUG)
     
     if proc.poll() != 0:
-        log_rsync_error('[INC] Upload failed. Please resolve the errors below and invoke with "continue"', out, err)
-        errcode = 7
+        log.error('[INC] Upload failed. Please resolve the errors below and invoke with "continue"')
+        exitcode = 7
         raise BackupException('Unable to create dir on TARGET')
-    else:
-        log_rsync_output(out, err)
 
 def create_full():
     log.info('Create new full backup...') 
@@ -469,14 +473,12 @@ def create_full():
     log.debug('invoke %r', ' '.join(iter(rsync)))
 
     proc = subprocess.Popen(rsync, bufsize=512, stdout=subprocess.PIPE, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
-    out, err = proc.communicate()
+    read_proc_output(proc, 'rsync', logging.DEBUG)
     
     if proc.poll() != 0:
-        log_rsync_error('[FULL] Upload failed. Please resolve the errors below and invoke with "continue"', out, err)
-        errcode = 8
+        log.error('[FULL] Upload failed. Please resolve the errors below and invoke with "continue"')
+        exitcode = 8
         raise BackupException('Unable to create dir on TARGET')
-    else:
-        log_rsync_output(out, err)
     
 def continue_backup():
     log.info('Continue last backup: start') 
@@ -485,42 +487,43 @@ def continue_backup():
     log.debug('invoke %r', ' '.join(iter(rsync)))
 
     proc = subprocess.Popen(rsync, bufsize=512, stdout=subprocess.PIPE, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
-    out, err = proc.communicate()
+    read_proc_output(proc, 'rsync', logging.DEBUG)
     
     if proc.poll() != 0:
-        log_rsync_error('[CONTINUE] Upload failed. Please resolve the errors below and invoke with "continue"', out, err)
-        errcode = 9
+        log.error('[CONTINUE] Upload failed. Please resolve the errors below and invoke with "continue"')
+        exitcode = 9
         raise BackupException('Unable to create dir on TARGET')
-    else:
-        log_rsync_output(out, err)
 
 
 def execute_prologue():
     if args and args.prologue and args.prologue[0] and len(args.prologue[0]) > 0:
         log.info('execute prologue "%s"', args.prologue[0])
         proc = subprocess.Popen(args.prologue, bufsize=512, stdout=subprocess.PIPE, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
-        out, err = proc.communicate()
+        read_proc_output(proc, args.prologue[0], logging.DEBUG)
+#        out, err = proc.communicate()
         code = proc.poll()
         if code  != 0:
-            log_proc_error(args.prologue[0], 'Prologue returned error: %i', out, err, code)
-            errcode = 10
+            log.error('Prologue returned error: %i', code)
+            exitcode = 10
             raise BackupException('Prologue returned error')       
-        else:
-            log_proc_output(args.prologue[0], out, err)
 
 def execute_epilogue():
     if args and args.epilogue and args.epilogue[0] and len(args.epilogue[0]) > 0:
         log.info('execute epilogue "%s"', args.epilogue[0])
         proc = subprocess.Popen(args.epilogue, bufsize=512, stdout=subprocess.PIPE, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
-        out, err = proc.communicate()
+        read_proc_output(proc, args.epilogue[0], logging.DEBUG)
+#        out, err = proc.communicate()
         code = proc.poll()
         if code  != 0:
-            log_proc_error(args.epilogue[0], 'Epilogue returned error: %i', out, err, code)
-            errcode = 11
+            log.error('Epilogue returned error: %i', code)
+            exitcode = 11
             raise BackupException('Epilogue returned error')       
-        else:
-            log_proc_output(args.epilogue[0], out, err)
         
+
+def process_arguments():
+    if args.no_delete:
+        rsync_other_args = rsync_other_args.replace('--delete','')
+
 
 def main():
     global exitcode
@@ -529,11 +532,11 @@ def main():
         parse_arguments()
         create_logger()
         log_arguments()
-
+        process_arguments()
         tmp = tempfile.gettempdir()
         if not tmp or tmp == '':
             log.error('Cannot determine temoporary directory please set TMP, TEMP or TEMPDIR')
-            errcode = 12
+            exitcode = 12
             raise Exception("Cannot determine temoporary")
         
         execute_prologue()
@@ -568,12 +571,12 @@ def main():
                     if not tunnel_event.is_set():
                         time.sleep(1);
             else:
-                errcode = 13
+                exitcode = 13
                 log.error('To use  "tunnel" you must pass --ssh-tunnel argument.')
     except BackupException as be:
         log.debug("Last error trace", exc_info=True)
     except Exception as e:
-        errcode = 255
+        exitcode = 255
         log.error('Unexpected exception!',exc_info=True)
         pass
     except KeyboardInterrupt:
@@ -594,7 +597,7 @@ if __name__ == '__main__':
         if log:
             log.error('Unexpected exception!',exc_info=True)
         if exitcode == 0:
-            errcode = 1000
+            exitcode = 1000
         term_ssh_tunnel()
         execute_epilogue()
         pass
