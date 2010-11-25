@@ -290,7 +290,7 @@ def term_ssh_tunnel():
             log.debug('No tunnel exists')
 
 def get_base_rsync_command(**p):
-    print p
+
     force_dry_run = p.get('force_dry_run', False)
     do_delete = p.get('do_delete', True)
     link_dest = p.get('link_dest', True)
@@ -373,7 +373,7 @@ def update_prev_link():
     log.debug('invoke %r', ' '.join(iter(rsync)))
 
     proc = subprocess.Popen(rsync, bufsize=512, stdout=subprocess.PIPE, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
-    read_proc_output(proc, 'rsync', logging.DEBUG)
+    out, err = read_proc_output(proc, 'rsync', logging.DEBUG)
     
     errcode = proc.poll()
     if errcode == 0:
