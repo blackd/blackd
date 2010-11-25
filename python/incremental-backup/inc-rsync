@@ -58,7 +58,7 @@ rsync_pass_file = '--password-file={password_file}'
 
 rsync_cmd = 'rsync {insert_point} --archive --itemize-changes --numeric-ids --hard-links --human-readable {other_args}  {source} {base}{target}/'
 
-current_backup=datetime.now().strftime('%Y-%m-%dT%H:%M')
+current_backup=datetime.now().strftime('%Y-%m-%dT%H:%M:%S')
 
 log = None
 args = None
