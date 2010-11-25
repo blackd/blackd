@@ -289,9 +289,15 @@ def term_ssh_tunnel():
         else:
             log.debug('No tunnel exists')
 
-def get_base_rsync_command(force_dry_run=False, delete=True, link_dest=True):
+def get_base_rsync_command(**p):
+    print p
+    force_dry_run = p.get('force_dry_run', False)
+    do_delete = p.get('do_delete', True)
+    link_dest = p.get('link_dest', True)
+    log.debug('get_base_rsync_command(force_dry_run=%r, do_delete=%r, link_dest=%r)', force_dry_run, do_delete, link_dest)
+
     cmd = None
-    params = ' --delete ' if delete else ''
+    params = ' --delete ' if do_delete else ''
     params += ' --link-dest=../prev/ ' if link_dest else ''
     params += '' if args.no_one_fs else ' --one-file-system '
     params += ' --dry-run ' if force_dry_run or args.dry_run  else ''
@@ -362,7 +368,7 @@ def update_prev_link():
     log.info('Updates symlink %s/prev to point to the current increment', args.url)
 
    
-    cmd = get_base_rsync_command(delete=False, link_dest=False)
+    cmd = get_base_rsync_command(do_delete=False, link_dest=False)
     rsync = (cmd.format(target='latest', base=args.url, source='')[0:-1] + ' --list-only').split()
     log.debug('invoke %r', ' '.join(iter(rsync)))
 
@@ -374,7 +380,7 @@ def update_prev_link():
         ls = out.split('\n')
         if len(ls) > 0 and len(ls[0]) > 0 and ls[0][0] == 'l':
             log.debug('good "latest" is a symlink')
-            cmd = get_base_rsync_command(delete=False, link_dest=False)
+            cmd = get_base_rsync_command(do_delete=False, link_dest=False)
             rsync = cmd.format(target=TMP, base='', source=(args.url + 'latest')).split()
             log.debug('invoke %r', ' '.join(iter(rsync)))
             proc = subprocess.Popen(rsync, bufsize=512, stdout=subprocess.PIPE, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -390,7 +396,7 @@ def update_prev_link():
                 prev_tmp = TMP + '/prev'
                 log.debug('rename %s to %s', latest_tmp, prev_tmp)
                 os.rename(latest_tmp, prev_tmp)
-                cmd = get_base_rsync_command(delete=False, link_dest=False)
+                cmd = get_base_rsync_command(do_delete=False, link_dest=False)
                 rsync = cmd.format(target='', base=args.url, source=(prev_tmp))[0:-1].split()
                 log.debug('invoke %r', ' '.join(iter(rsync)))
                 proc = subprocess.Popen(rsync, bufsize=512, stdout=subprocess.PIPE, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -416,7 +422,7 @@ def update_latest_link(current_backup):
     log.info('Update "latest" to %s...', current_backup)
     latest_tmp = TMP + '/latest'
     os.symlink(current_backup, latest_tmp)
-    cmd = get_base_rsync_command(delete=False, link_dest=False)
+    cmd = get_base_rsync_command(do_delete=False, link_dest=False)
     rsync = cmd.format(target='', base=args.url, source=(latest_tmp))[0:-1].split()
     log.debug('invoke %r', ' '.join(iter(rsync)))
     proc = subprocess.Popen(rsync, bufsize=512, stdout=subprocess.PIPE, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -434,7 +440,7 @@ def create_dir_on_target(name):
     tmpdir = TMP + '/' + name
     os.mkdir(tmpdir);
    
-    cmd = get_base_rsync_command(delete=False)
+    cmd = get_base_rsync_command(do_delete=False)
     rsync = cmd.format(target='', source=tmpdir, base=args.url)[0:-1].split()
 
     log.debug('invoke %r', ' '.join(iter(rsync)))
