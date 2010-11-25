@@ -37,7 +37,7 @@ if os.name != 'posix':
     
 
 
-import subprocess, logging, logging.handlers, argparse, time, tempfile, string, shutil, select, fcntl
+import subprocess, logging, logging.handlers, argparse, time, tempfile, string, shutil
 from datetime import datetime
 from threading import Thread, Event, Timer
 
